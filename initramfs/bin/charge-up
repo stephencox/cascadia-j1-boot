@@ -5,10 +5,16 @@
 # the backlight low. Never write PMU 0x29 or 0x42. Log: /var/log/charge.log.
 exec >> /var/log/charge.log 2>&1
 for i in $(seq 1 20); do [ -e /dev/i2c-0 ] && break; sleep 1; done
-before=$(i2creg 0 0x3c 0x3e)
+before=$(i2creg 0 0x3c 0x3e) || { echo "FAILED: cannot read 0x3e"; exit 1; }
 case "$before" in
-*" 02"|*" 22") i2creg -w 0 0x3c 0x3e 0x4a ;;
+*" 02"|*" 22") ;;
 *) echo "0x3e is not iBoot's value, left alone: $before"; exit 0 ;;
 esac
 echo "before: $before"
-echo "after:  $(i2creg 0 0x3c 0x3e)"
+i2creg -w 0 0x3c 0x3e 0x4a || { echo "FAILED: write of 0x4a to 0x3e"; exit 1; }
+after=$(i2creg 0 0x3c 0x3e) || { echo "FAILED: cannot read 0x3e back"; exit 1; }
+echo "after:  $after"
+case "$after" in
+*" 4a") ;;
+*) echo "FAILED: 0x3e reads back as $after, not 4a"; exit 1 ;;
+esac
