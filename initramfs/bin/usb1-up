@@ -1,0 +1,28 @@
+#!/bin/sh
+# J1 usb1 complex + HSIC Wi-Fi bring-up by hand (wifi/README.md).
+rd() { devmem $1 | cut -d' ' -f2; }
+set_bits() { v=$(( 0x$(rd $1) | $2 )); devmem -w $1 $v >/dev/null; }
+clr_bits() { v=$(( 0x$(rd $1) & ~$2 )); devmem -w $1 $v >/dev/null; }
+P=0x36800000
+devmem -w 0x3f1010b4 0x20f >/dev/null   # USB1-REG power
+devmem -w 0x3f1010a4 0x20f >/dev/null   # USB1-EHCI power
+devmem -w 0x3f109000 0x84 >/dev/null    # USB_CTL: HSIC on, no auto gating
+set_bits $((P+0x08)) 0x3f               # PHY: assert all resets
+devmem -w $((P+0x60)) 0x2e0 >/dev/null
+devmem -w $((P+0x00)) 0x0f >/dev/null
+devmem -w $((P+0x04)) 0x11 >/dev/null   # 24 MHz ref
+devmem -w $((P+0x40)) 0x349 >/dev/null
+devmem -w $((P+0x44)) 0x733 >/dev/null
+usleep 20
+clr_bits $((P+0x08)) 0x02
+usleep 1000
+clr_bits $((P+0x08)) 0x08               # port 2 out of reset
+echo "PHY: $(rd $P) $(rd $((P+4))) $(rd $((P+8))) 60=$(rd $((P+0x60)))"
+devmem -w 0x36c000b0 0x2 >/dev/null     # EHCI HSIC port mask
+echo "EHCI b0=$(rd 0x36c000b0)"
+i2creg -w 0 0x3c 0x67 0x0b              # REG_ON (PMU GPIO3 high)
+sleep 1
+echo 36c00000.usb > /sys/bus/platform/drivers/ehci-platform/bind
+sleep 4
+dmesg | grep -iE "ehci|usb 1-|brcm|hsic" | tail -20
+lsusb

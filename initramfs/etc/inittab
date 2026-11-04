@@ -1,0 +1,9 @@
+# busybox init (/init -> /bin/busybox). rcS runs first; the rest are kept
+# running. The shell is on the gadget's ACM port (/dev/ttyACM0 on the host)
+# and nowhere else.
+::sysinit:/etc/init.d/rcS
+ttyGS0::respawn:-/bin/sh
+::respawn:/bin/touch-up
+::once:/bin/charge-up
+::restart:/bin/busybox init
+::ctrlaltdel:/bin/busybox reboot

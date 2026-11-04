@@ -1,0 +1,3 @@
+# Extra initramfs entries that need root to create on disk.
+# Without /dev/console, PID 1 starts with no stdin/stdout/stderr.
+nod /dev/console 0600 0 0 c 5 1

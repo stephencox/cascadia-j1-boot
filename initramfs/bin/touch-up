@@ -1,0 +1,4 @@
+#!/bin/sh
+# Boot the Z2 digitizer and stay running so the kernel keeps it (respawned
+# by init if it exits).
+exec /bin/z2-boot-j1 > /var/log/touch.log 2>&1

@@ -1,0 +1,14 @@
+#!/bin/sh
+# iBEC leaves the D1974's input-current limit (PMU 0x3e) at 0x02, about
+# 100 mA, and the battery drains under Linux. 0x4a is 1000 mA: on the J1
+# this was measured to turn about -190 mA into about +210 mA at idle with
+# the backlight low. Never write PMU 0x29 or 0x42. Log: /var/log/charge.log.
+exec >> /var/log/charge.log 2>&1
+for i in $(seq 1 20); do [ -e /dev/i2c-0 ] && break; sleep 1; done
+before=$(i2creg 0 0x3c 0x3e)
+case "$before" in
+*" 02"|*" 22") i2creg -w 0 0x3c 0x3e 0x4a ;;
+*) echo "0x3e is not iBoot's value, left alone: $before"; exit 0 ;;
+esac
+echo "before: $before"
+echo "after:  $(i2creg 0 0x3c 0x3e)"

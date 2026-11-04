@@ -1,0 +1,15 @@
+#!/bin/sh
+# Power-cycle the BCM4330 (REG_ON + port 2 PHY reset) and wait for the boot ROM.
+P=/sys/bus/usb/devices/1-0:1.0/usb1-port2
+echo 1 > $P/disable
+i2creg -w 0 0x3c 0x67 0x09 >/dev/null
+devmem -w 0x36800008 0x1d >/dev/null
+usleep 200000
+i2creg -w 0 0x3c 0x67 0x0b >/dev/null
+usleep 1000
+devmem -w 0x36800008 0x15 >/dev/null
+usleep 100000
+echo 0 > $P/disable
+for i in 1 2 3 4 5 6 7 8 9 10; do [ -e /sys/bus/usb/devices/1-2 ] && break; usleep 200000; done
+[ "$1" = bind ] && echo 1-2 > /sys/bus/usb/drivers/usb/bind
+cat /sys/bus/usb/devices/1-2/idProduct 2>/dev/null || echo no-device

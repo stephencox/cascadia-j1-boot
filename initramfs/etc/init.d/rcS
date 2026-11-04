@@ -1,0 +1,17 @@
+#!/bin/busybox sh
+# J1 (iPad3,1) system start: filesystems, applets, hostname. Everything else
+# is in /etc/inittab.
+/bin/busybox mount -t proc proc /proc
+/bin/busybox mount -t sysfs sysfs /sys
+/bin/busybox mount -t devtmpfs devtmpfs /dev 2>/dev/null
+/bin/busybox --install -s /bin
+mkdir -p /dev/pts /dev/shm /run /var/run /var/log /tmp
+mount -t devpts devpts /dev/pts
+mount -t tmpfs tmpfs /dev/shm
+mount -t tmpfs tmpfs /tmp
+mount -t debugfs debugfs /sys/kernel/debug 2>/dev/null
+hostname -F /etc/hostname
+ip link set lo up
+# The console cursor would blink over whatever the app draws.
+echo 0 > /sys/class/graphics/fbcon/cursor_blink 2>/dev/null
+echo "J1: rcS done" > /dev/kmsg
