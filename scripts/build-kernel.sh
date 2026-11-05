@@ -43,7 +43,7 @@ T=/cascadia/build/linux
 make -C $T multi_v7_defconfig
 $T/scripts/kconfig/merge_config.sh -m -O $T $T/.config /work/build/j1ap.config
 make -C $T olddefconfig
-for s in CONFIG_ARCH_APPLE_S5L CONFIG_SERIAL_EARLYCON CONFIG_USB_CDC_COMPOSITE CONFIG_TOUCHSCREEN_APPLE_Z2 CONFIG_BRCMFMAC_USB CONFIG_ARM_APPENDED_DTB; do
+for s in CONFIG_ARCH_APPLE_S5L CONFIG_SERIAL_EARLYCON CONFIG_USB_CDC_COMPOSITE CONFIG_TOUCHSCREEN_APPLE_Z2 CONFIG_BRCMFMAC_USB CONFIG_ARM_APPENDED_DTB CONFIG_BATTERY_APPLE_HDQ CONFIG_BACKLIGHT_APPLE_PMU_WLED CONFIG_HOTPLUG_CPU; do
     grep -q "^$s=y" $T/.config || { echo "config: $s is not =y"; exit 1; }
 done
 make -C $T -j"$(nproc)" zImage
