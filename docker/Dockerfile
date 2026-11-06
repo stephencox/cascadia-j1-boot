@@ -1,8 +1,5 @@
-# Everything the kit builds, in one place. The kernel compiler is the one
-# that matters: the loader patches the zImage decompressor at fixed offsets
-# (loader/j1_boot.S), and scripts/build-staging.sh refuses a zImage whose
-# words at those offsets differ. Those offsets were taken from this
-# compiler's output. GCC 11.4 here; a different GCC fails that check.
+# Everything the kit builds, in one place. Nothing depends on this
+# particular compiler: the loader enters the kernel Image directly.
 FROM ubuntu:22.04
 
 ENV DEBIAN_FRONTEND=noninteractive

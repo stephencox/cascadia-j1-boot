@@ -43,24 +43,12 @@ T=/cascadia/build/linux
 make -C $T multi_v7_defconfig
 $T/scripts/kconfig/merge_config.sh -m -O $T $T/.config /work/build/j1ap.config
 make -C $T olddefconfig
-for s in CONFIG_ARCH_APPLE_S5L CONFIG_SERIAL_EARLYCON CONFIG_USB_CDC_COMPOSITE CONFIG_TOUCHSCREEN_APPLE_Z2 CONFIG_BRCMFMAC_USB CONFIG_ARM_APPENDED_DTB CONFIG_BATTERY_APPLE_HDQ CONFIG_BACKLIGHT_APPLE_PMU_WLED CONFIG_HOTPLUG_CPU CONFIG_FRAMEBUFFER_CONSOLE_ROTATION CONFIG_FONT_TER16x32; do
+for s in CONFIG_ARCH_APPLE_S5L CONFIG_SERIAL_EARLYCON CONFIG_USB_CDC_COMPOSITE CONFIG_TOUCHSCREEN_APPLE_Z2 CONFIG_BRCMFMAC_USB CONFIG_BATTERY_APPLE_HDQ CONFIG_BACKLIGHT_APPLE_PMU_WLED CONFIG_HOTPLUG_CPU CONFIG_FRAMEBUFFER_CONSOLE_ROTATION CONFIG_FONT_TER16x32; do
     grep -q "^$s=y" $T/.config || { echo "config: $s is not =y"; exit 1; }
 done
-make -C $T -j"$(nproc)" zImage
+make -C $T -j"$(nproc)" Image
 dtc -I dts -O dtb -o /work/build/j1ap.dtb /cascadia/dts/j1ap.dts
 SH
-
-python3 - "$TREE/arch/arm/boot/zImage" "$BUILD/j1ap.dtb" "$BUILD/j1-zImage-dtb" <<'PY'
-import sys
-from pathlib import Path
-z = Path(sys.argv[1]).read_bytes()
-dtb = Path(sys.argv[2]).read_bytes()
-assert dtb[:4] == bytes.fromhex("d00dfeed"), "dtb magic"
-# On an 8-byte boundary: the decompressor reads the FDT at _edata.
-out = z + bytes((8 - len(z) % 8) % 8) + dtb
-Path(sys.argv[3]).write_bytes(out)
-print(f"zImage {len(z)} bytes + dtb {len(dtb)} -> {len(out)}")
-PY
 
 cp "$TREE/arch/arm/boot/Image" "$BUILD/j1-Image"
 bash "$ROOT/scripts/build-staging.sh"

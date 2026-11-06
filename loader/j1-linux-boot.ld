@@ -1,7 +1,8 @@
 /*
- * J1 RAM loader at iBEC's load address. The zImage sits at 0x80008000.
- * The stack lives at 0x80007ff0, in the pad, and the image has to end
- * by 0x80007f60 so the stack keeps 128 bytes clear of the loader.
+ * J1 RAM loader at iBEC's load address. The kernel Image sits at
+ * 0x80008000, behind a 16-byte header at 0x80007ff0. The stack grows down
+ * from 0x80007fe0, in the pad, and the loader has to end by 0x80007f60 so
+ * the stack keeps 128 bytes clear of it.
  */
 ENTRY(_start)
 

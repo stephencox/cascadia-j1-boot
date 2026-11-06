@@ -42,12 +42,9 @@ scripts/build-initramfs.sh
 scripts/build-kernel.sh        # clones Linux v6.12 into $CASCADIA/devices/a5/build/linux if needed
 ```
 
-The Docker toolchain (`docker/`) builds everything, but the kernel's
-compiler is not pinned: the staging carries the uncompressed kernel
-`Image`, and the loader enters it directly, so no decompressor runs. The
-old zImage layout (`J1_ZIMAGE=1 scripts/build-staging.sh`) still works,
-and only with GCC 11.4: there the loader patches the decompressor at fixed
-offsets (below).
+The Docker toolchain (`docker/`) builds everything. Any compiler that
+builds the kernel will do: the staging carries the uncompressed kernel
+`Image`, and the loader enters it directly.
 
 ## Boot
 
@@ -125,28 +122,15 @@ before a long session anyway: a flat battery fails the boot right after
 
   The result is packed as a plaintext IMG3 with no KBAG (Cascadia's
   `img3pack.py`).
-- **Loader** (`loader/j1_boot.S`, ARM, 2288 bytes at `0x80000000`).
+- **Loader** (`loader/j1_boot.S`, ARM, 612 bytes at `0x80000000`).
   - It stops the watchdog through iBoot's mapping (`0x0f103020`; the
     physical `0x3f103020` is wrong while iBoot's MMU is on).
-  - The default staging is `[loader][pad][header][Image at 0x80008000][DTB]`.
+  - The staging is `[loader][pad][header][Image at 0x80008000][DTB]`.
     The 16-byte header before the Image is `J1IM`, the DTB's offset and its
     size. The loader cleans L1 and the PL310, turns the MMU and caches off,
     copies the DTB to `0x84000000` (clear of the kernel's BSS), sets the
     Cortex-A9 errata bits 743622 and 751472, and enters the Image with
     `r0 = 0`, `r1 = ~0`, `r2` = the DTB: the ordinary ARM boot protocol.
-  - Without the header it is the old zImage layout. It finds the DTB
-    appended to the zImage, enters the zImage at `0x80008000`, and plants
-    four hooks in the relocated decompressor:
-    - **`cache_on`:** M and C are cleared from its SCTLR write.
-    - **`decompress_kernel` entry:** the DTB is copied to `0x84000000`.
-    - **`do_decompress`:** DRAM is identity-mapped and the caches turned
-      on, with L1 and L2 cleaned first.
-    - **After decompression:** L1 and L2 are cleaned, and the MMU and
-      caches are turned off before `__enter_kernel`.
-
-  Without them the decompressor did not get through on this board. The
-  hook sites are offsets in the decompressor, so this layout holds for GCC
-  11.4 only.
 - **Kernel:** Cascadia's tree and `config/j1ap.config` on
   `multi_v7_defconfig`. The bootargs come from `dts/j1ap.dts`:
   `earlycon=j1fb console=tty0 console=ttyGS0,115200 fbcon=rotate:1,font:TER16x32`.
