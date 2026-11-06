@@ -1,5 +1,15 @@
 #!/usr/bin/env bash
-# Pack [loader][pad to 0x8000][zImage+dtb]. Does not call irecovery.
+# Pack build/j1-staging.bin. Does not call irecovery.
+#
+# Default, the Image layout: [loader][pad][16-byte header][kernel Image at
+# 0x80008000][pad to 8][DTB]. The header is "J1IM", the DTB's offset from
+# the Image and its size; the loader copies the DTB clear of the kernel's
+# BSS and enters the Image directly. No decompressor runs, so nothing here
+# depends on the compiler.
+#
+# J1_ZIMAGE=1, the old layout: [loader][pad to 0x8000][zImage+dtb], with
+# the loader's hooks in the decompressor. Their sites are fixed offsets
+# that hold for GCC 11.4 only, checked below.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -11,6 +21,40 @@ PAD=$((0x8000))
 fail() { echo "error: $*" >&2; exit 1; }
 
 [ -f "$LOADER" ] || fail "no loader at $LOADER"
+
+if [ "${J1_ZIMAGE:-0}" != 1 ]; then
+    KIMAGE="$ROOT/build/j1-Image"
+    DTB="$ROOT/build/j1ap.dtb"
+    [ -f "$KIMAGE" ] || fail "no kernel Image at $KIMAGE"
+    [ -f "$DTB" ] || fail "no DTB at $DTB"
+    python3 - "$LOADER" "$KIMAGE" "$DTB" "$OUT" "$PAD" << 'PACK'
+import sys
+from pathlib import Path
+
+loader, image, dtb = (Path(a).read_bytes() for a in sys.argv[1:4])
+out, pad = Path(sys.argv[4]), int(sys.argv[5])
+if len(loader) > pad - 16:
+    raise SystemExit(f"loader is {len(loader)} bytes, leaves no room for the header")
+if dtb[:4] != bytes.fromhex("d00dfeed"):
+    raise SystemExit("DTB has no FDT magic")
+if image[:4] == bytes.fromhex("d00dfeed"):
+    raise SystemExit("the Image starts with an FDT magic")
+# The staging must fit iBEC's go window (up to 0x83f00000); the loader
+# copies the DTB to 0x84000000, above it and above the kernel's BSS.
+dtb_off = len(image) + (8 - len(image) % 8) % 8
+end = 0x80008000 + dtb_off + len(dtb)
+if end > 0x83f00000:
+    raise SystemExit(f"staging ends at {end:#x}, past iBEC's 0x83f00000")
+hdr = b"J1IM" + dtb_off.to_bytes(4, "little") + len(dtb).to_bytes(4, "little") + bytes(4)
+blob = loader + bytes(pad - 16 - len(loader)) + hdr + image + bytes(dtb_off - len(image)) + dtb
+out.write_bytes(blob)
+print(f"staging {len(blob)} bytes (Image layout): loader {len(loader)}, Image at 0x80008000 "
+      f"({len(image)} bytes), dtb at {0x80008000 + dtb_off:#x} size {len(dtb):#x}")
+PACK
+    ls -l "$OUT"
+    exit 0
+fi
+
 [ -f "$IMAGE" ] || fail "no zImage at $IMAGE"
 
 python3 - "$LOADER" "$IMAGE" "$OUT" "$PAD" << 'PY'

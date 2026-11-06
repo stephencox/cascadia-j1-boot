@@ -2,7 +2,20 @@
  * J1 (iPad3,1 / A5X) RAM loader, linked at 0x80000000. iBEC's raw-go
  * `go` enters it with blx, in ARM state, with iBoot's MMU still on.
  *
- * Bundle layout: [this loader][pad to 0x8000][zImage+dtb at 0x80008000].
+ * Bundle layouts:
+ *   Image   [this loader][pad][header at 0x7ff0][Image at 0x80008000][DTB]
+ *   zImage  [this loader][pad to 0x8000][zImage+dtb at 0x80008000]
+ *
+ * The Image layout is the default (scripts/build-staging.sh). Its header,
+ * the 16 bytes before the kernel, is "J1IM", the DTB's offset from
+ * 0x80008000 and its size. The kernel Image needs no decompressor, so
+ * nothing below depends on how the kernel was compiled: the loader
+ * enters it by the ordinary ARM boot protocol (MMU and D-cache off,
+ * r0 = 0, r1 = ~0, r2 = the DTB). The DTB is copied to 0x84000000 first,
+ * clear of the kernel's BSS, which starts where the Image ends.
+ *
+ * Without the header it is the zImage layout, and the rest of this
+ * comment applies.
  *
  * This is the stripped loader: no drawing, only what the boot needs.
  * j1_linux_boot.S is the debug loader it came from, and still paints
@@ -44,6 +57,9 @@
 	.equ	PD_BASE,	0x84010000
 	.equ	DTB_COPY,	0x84000000
 	.equ	SCAN_END,	0x82008000
+	.equ	IMAGE_HDR,	0x80007ff0
+	/* "J1IM" as a little-endian word */
+	.equ	IMAGE_MAGIC,	0x4d49314a
 	/* Bytes d0 0d fe ed, the FDT magic, as a little-endian word. */
 	.equ	FDT_MAGIC_LE,	0xedfe0dd0
 	/*
@@ -103,6 +119,11 @@ _start:
 	str	r1, [r0, #0x0C]
 
 	ldr	sp, =STACK_TOP
+	ldr	r0, =IMAGE_HDR
+	ldr	r1, [r0]
+	ldr	r2, =IMAGE_MAGIC
+	cmp	r1, r2
+	beq	enter_image
 	bl	find_dtb
 
 	bl	v7_flush_dcache_all
@@ -131,6 +152,86 @@ _start:
 hang:
 	wfi
 	b	hang
+
+	.ltorg
+
+/*
+ * The Image layout. r0 = the header. Check the DTB, copy it to DTB_COPY,
+ * turn the MMU and caches off as for the zImage, set the errata bits and
+ * enter the kernel.
+ */
+enter_image:
+	ldr	r4, [r0, #4]		/* DTB offset from KERNEL_ENTRY */
+	ldr	r1, =KERNEL_ENTRY
+	add	r4, r4, r1
+	ldr	r3, [r4]
+	ldr	r1, =FDT_MAGIC_LE
+	cmp	r3, r1
+	bne	hang
+
+	bl	v7_flush_dcache_all
+	bl	l2x0_flush_all
+
+	mrc	p15, 0, r0, c1, c0, 0
+	bic	r0, r0, #(1 << 0)	/* MMU */
+	bic	r0, r0, #(1 << 2)	/* D-cache */
+	bic	r0, r0, #(1 << 12)	/* I-cache */
+	bic	r0, r0, #(1 << 11)	/* branch predictor */
+	mcr	p15, 0, r0, c1, c0, 0
+	isb
+	mov	r0, #0
+	mcr	p15, 0, r0, c7, c5, 0	/* ICIALLU */
+	mcr	p15, 0, r0, c7, c5, 6	/* BPIALL */
+	mcr	p15, 0, r0, c8, c7, 0	/* TLBIALL */
+	dsb
+	isb
+
+	/* totalsize is big-endian at +4, rounded up to a word */
+	ldr	r2, [r4, #4]
+	rev	r2, r2
+	add	r2, r2, #3
+	bic	r2, r2, #3
+	ldr	r1, =DTB_COPY
+.img_copy_dtb:
+	ldr	r3, [r4], #4
+	str	r3, [r1], #4
+	subs	r2, r2, #4
+	bne	.img_copy_dtb
+	dsb
+	bl	l2x0_flush_all
+
+	bl	a9_errata
+	band	1
+	mov	r0, #0
+	mvn	r1, #0
+	ldr	r2, =DTB_COPY
+	ldr	r3, =KERNEL_ENTRY
+	bx	r3
+
+/*
+ * Cortex-A9 r2pN errata 743622 (store-buffer hazard checking can corrupt
+ * data; diagnostic bit 6) and 751472 (interrupted ICIALLUIS may never
+ * complete; bit 11). The kernel only sets these in init_early, after
+ * paging_init has already done its page-table writes, and paging_init
+ * dies without them. Only secure code may write the diagnostic register,
+ * and this loader runs secure. Clobbers r0-r2.
+ */
+a9_errata:
+	mrc	p15, 0, r0, c0, c0, 0	/* MIDR */
+	ldr	r1, =0xff0ffff0
+	and	r1, r0, r1
+	ldr	r2, =0x410fc090		/* ARM Cortex-A9, any variant/rev */
+	cmp	r1, r2
+	bxne	lr
+	ubfx	r1, r0, #20, #4		/* variant */
+	mrc	p15, 0, r0, c15, c0, 1
+	cmp	r1, #2
+	orreq	r0, r0, #(1 << 6)
+	cmp	r1, #3
+	orrlo	r0, r0, #(1 << 11)
+	mcr	p15, 0, r0, c15, c0, 1
+	isb
+	bx	lr
 
 	.ltorg
 

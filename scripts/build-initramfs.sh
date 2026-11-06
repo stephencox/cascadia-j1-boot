@@ -49,4 +49,13 @@ cp "$IOS/J1.mtprops" "$OUT/lib/firmware/J1.mtprops"
 cp "$IOS/mtcal.bin" "$OUT/lib/firmware/j1-mtcal.bin"
 python3 "$A5/scripts/trx-add-nvram.py" "$IOS/mike.trx" "$IOS/mike.txt" \
     "$OUT/lib/firmware/brcm/brcmfmac4330.bin" "$mac"
+# Bluetooth: the BCM4330's patchram, out of iOS's BlueTool ("Mike" is the
+# J1's module, as in the Wi-Fi firmware's name). btbcm asks for this name.
+if [ -s "$IOS/BlueTool" ]; then
+    python3 "$A5/scripts/extract-bt-firmware.py" "$IOS/BlueTool" \
+        "Olympic Mike Module" "$OUT/lib/firmware/brcm/BCM4330B1.hcd"
+    check BCM4330B1.hcd "$OUT/lib/firmware/brcm/BCM4330B1.hcd"
+else
+    echo "    no ios-files/BlueTool: no Bluetooth firmware (scripts/get-ios-files.sh)"
+fi
 echo "ok: build/initramfs"

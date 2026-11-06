@@ -42,10 +42,12 @@ scripts/build-initramfs.sh
 scripts/build-kernel.sh        # clones Linux v6.12 into $CASCADIA/devices/a5/build/linux if needed
 ```
 
-Use the Docker toolchain for the kernel (GCC 11.4, Ubuntu 22.04). The
-loader patches the zImage decompressor at fixed offsets (below), and
-`build-staging.sh` refuses a zImage whose words there differ, which is
-what a different compiler produces.
+The Docker toolchain (`docker/`) builds everything, but the kernel's
+compiler is not pinned: the staging carries the uncompressed kernel
+`Image`, and the loader enters it directly, so no decompressor runs. The
+old zImage layout (`J1_ZIMAGE=1 scripts/build-staging.sh`) still works,
+and only with GCC 11.4: there the loader patches the decompressor at fixed
+offsets (below).
 
 ## Boot
 
@@ -93,9 +95,9 @@ before a long session anyway: a flat battery fails the boot right after
 - **No DFU after the tap:** run `scripts/boot.sh` again. If kloader killed
   iOS without starting iBSS, rerun EverPwnage first.
 - **`go` and then nothing, blank screen, backlight on:** check the battery
-  first. If the battery is fine, check that `earlycon=j1fb` is still in
-  `dts/j1ap.dts`'s bootargs. Without it the kernel stops in early boot on
-  this board, and why is not known yet.
+  first. If the battery is fine, check that the Cascadia checkout has the
+  AIC-timer fix (`apple_aic1_timer_start` in `patches/tree/0001`): without
+  it the J1 can hang in early boot unless `earlycon=j1fb` is on.
 - **The boot log on the panel stops:** a photo of the last lines is the
   most useful report.
 
@@ -123,12 +125,18 @@ before a long session anyway: a flat battery fails the boot right after
 
   The result is packed as a plaintext IMG3 with no KBAG (Cascadia's
   `img3pack.py`).
-- **Loader** (`loader/j1_boot.S`, ARM, 2032 bytes at `0x80000000`).
+- **Loader** (`loader/j1_boot.S`, ARM, 2288 bytes at `0x80000000`).
   - It stops the watchdog through iBoot's mapping (`0x0f103020`; the
     physical `0x3f103020` is wrong while iBoot's MMU is on).
-  - It finds the DTB appended to the zImage, cleans L1 and the PL310, turns
-    the MMU and caches off, and enters the zImage at `0x80008000`.
-  - It also plants four hooks in the relocated decompressor:
+  - The default staging is `[loader][pad][header][Image at 0x80008000][DTB]`.
+    The 16-byte header before the Image is `J1IM`, the DTB's offset and its
+    size. The loader cleans L1 and the PL310, turns the MMU and caches off,
+    copies the DTB to `0x84000000` (clear of the kernel's BSS), sets the
+    Cortex-A9 errata bits 743622 and 751472, and enters the Image with
+    `r0 = 0`, `r1 = ~0`, `r2` = the DTB: the ordinary ARM boot protocol.
+  - Without the header it is the old zImage layout. It finds the DTB
+    appended to the zImage, enters the zImage at `0x80008000`, and plants
+    four hooks in the relocated decompressor:
     - **`cache_on`:** M and C are cleared from its SCTLR write.
     - **`decompress_kernel` entry:** the DTB is copied to `0x84000000`.
     - **`do_decompress`:** DRAM is identity-mapped and the caches turned
@@ -137,20 +145,23 @@ before a long session anyway: a flat battery fails the boot right after
       caches are turned off before `__enter_kernel`.
 
   Without them the decompressor did not get through on this board. The
-  hook sites are offsets in the decompressor, which is why the compiler is
-  pinned.
+  hook sites are offsets in the decompressor, so this layout holds for GCC
+  11.4 only.
 - **Kernel:** Cascadia's tree and `config/j1ap.config` on
   `multi_v7_defconfig`. The bootargs come from `dts/j1ap.dts`:
-  `earlycon=j1fb console=ttyGS0,115200 maxcpus=1`. The DTB is appended to
-  the zImage.
+  `earlycon=j1fb console=tty0 console=ttyGS0,115200 fbcon=rotate:1,font:TER16x32`.
+  `earlycon=j1fb` draws the early log until fbcon takes the panel, portrait.
 - **Initramfs:**
   - a static busybox (Alpine 3.24), which is `/init`;
   - `z2-boot-j1`, which boots the digitizer and hands it to Cascadia's Z2
     driver;
-  - `usb1-up`, which brings up the second USB complex's HSIC PHY by hand,
-    then REG_ON (no PHY driver yet);
+  - `usb1-up`, the second USB complex's HSIC PHY by hand, for kernels
+    without the PHY driver (with it, `wlan0` is up at boot and `wifi-up`
+    skips this);
   - Alpine's `iw` and `wpa_supplicant`;
-  - `devmem` and `i2creg`.
+  - `devmem` and `i2creg`;
+  - the BCM4330's Bluetooth patchram, `brcm/BCM4330B1.hcd`, cut out of
+    iOS's BlueTool when `ios-files/BlueTool` is there.
 
 Cascadia's `docs/research/j1-a5x.md` (PR #28) has the measurements: PMGR,
 PMU, touch and Wi-Fi.
@@ -164,7 +175,7 @@ PMU, touch and Wi-Fi.
 | `scripts/patch-ibec-rawgo.py` | the raw-go patch, checked with capstone before and after |
 | `scripts/ibss-sites.py` | checks iBSS's USB load site |
 | `scripts/build-loader.sh`, `loader/` | the loader and its linker script |
-| `scripts/get-ios-files.sh` | `J1.mtprops`, `mike.trx`/`mike.txt`, the panel calibration (Cascadia's `mtcal`) |
+| `scripts/get-ios-files.sh` | `J1.mtprops`, `mike.trx`/`mike.txt`, `BlueTool`, the panel calibration (Cascadia's `mtcal`) |
 | `scripts/build-initramfs.sh`, `initramfs/`, `tools/` | the userland |
 | `scripts/build-kernel.sh`, `config/`, `scripts/build-staging.sh` | the kernel and `build/j1-staging.bin` |
 | `scripts/boot.sh` | kloader, DFU, iBEC, staging, `go` |
@@ -172,12 +183,10 @@ PMU, touch and Wi-Fi.
 
 ## Not done
 
-- **CPU1:** the kernel runs with `maxcpus=1`.
-- **Display:** there is no GPU or display driver; the panel shows iBoot's
-  framebuffer.
-- **Missing drivers:** there are no drivers for the backlight, audio or
-  Bluetooth, and no PHY driver for the Wi-Fi's USB complex.
+- **Display:** there is no GPU or display driver; the panel shows
+  iBoot's framebuffer through simplefb.
+- **Missing drivers:** audio, and a charger driver (`charge-up` sets the
+  input limit by hand).
 - **NAND:** writes are not supported.
-- **Early fault:** the fault that `earlycon=j1fb` hides is not found.
 
 GPL-2.0, as Project Cascadia.

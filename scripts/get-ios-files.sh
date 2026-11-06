@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Copy what the Linux side needs from this iPad's own iOS into ios-files/:
-# the digitizer firmware, the panel's calibration and the Wi-Fi firmware
-# and NVRAM. These are Apple's files and this panel's data, so they are
+# the digitizer firmware, the panel's calibration, the Wi-Fi firmware
+# and NVRAM, and BlueTool (it carries the Bluetooth patchram). These are Apple's files and this panel's data, so they are
 # not in the kit.
 #
 #   iproxy 2222 22 &      (iPad in jailbroken iOS, unlocked, OpenSSH installed)
@@ -30,6 +30,7 @@ echo "    $model $build"
 ios cat /usr/share/firmware/multitouch/J1.mtprops > "$OUT/J1.mtprops"
 ios cat /usr/share/firmware/wifi/4330b2/mike.trx > "$OUT/mike.trx"
 ios cat /usr/share/firmware/wifi/4330b2/mike.txt > "$OUT/mike.txt"
+ios cat /usr/sbin/BlueTool > "$OUT/BlueTool"
 
 # The calibration is per panel: iBoot copies it out of syscfg (MtCl) into
 # the device tree, and Cascadia's mtcal reads it back through IOKit.
@@ -43,5 +44,6 @@ od -An -tx1 "$OUT/mtcal.bin" | tr -d ' \n' | grep -q '[1-9a-f]' || fail "calibra
 check J1.mtprops "$OUT/J1.mtprops"
 check mike.trx "$OUT/mike.trx"
 check mike.txt "$OUT/mike.txt"
+check BlueTool "$OUT/BlueTool"
 [ -s "$OUT/wifi-mac" ] || echo "next: put the Wi-Fi MAC in ios-files/wifi-mac"
 echo "ok: ios-files/"

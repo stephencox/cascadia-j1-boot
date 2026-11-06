@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # Build the J1 kernel from a Project-Cascadia checkout (main from aa6c5be
 # on), embed build/initramfs, append dts/j1ap.dtb, and pack
-# build/j1-staging.bin (loader, pad to 0x8000, zImage+DTB). Does not talk
-# to the iPad.
+# build/j1-staging.bin (loader, header, the kernel Image, DTB; see
+# build-staging.sh). Does not talk to the iPad.
 #
 #   CASCADIA=~/src/Project-Cascadia scripts/build-kernel.sh
 set -euo pipefail
@@ -62,4 +62,5 @@ Path(sys.argv[3]).write_bytes(out)
 print(f"zImage {len(z)} bytes + dtb {len(dtb)} -> {len(out)}")
 PY
 
+cp "$TREE/arch/arm/boot/Image" "$BUILD/j1-Image"
 bash "$ROOT/scripts/build-staging.sh"
