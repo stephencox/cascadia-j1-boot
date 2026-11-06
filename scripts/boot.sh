@@ -43,8 +43,64 @@ wait_mode() {
     return 1
 }
 
+shell_check() {
+    # The gadget can enumerate with its serial port dead (the host logs
+    # "device descriptor read/64, error -71" first, and the shell never
+    # answers) while Linux itself runs fine. Ask the shell for 6*7.
+    set +e
+    tty=$(timeout 25 python3 -I - <<'PY'
+import glob, os, select, sys, termios, time
+end = time.time() + 20
+dev = None
+while time.time() < end and not dev:
+    for d in glob.glob("/sys/bus/usb/devices/*"):
+        try:
+            if open(d + "/idVendor").read().strip() == "0525" and \
+               open(d + "/idProduct").read().strip() == "a4aa":
+                t = glob.glob(d + "/*/tty/ttyACM*")
+                if t:
+                    dev = "/dev/" + os.path.basename(t[0])
+        except OSError:
+            pass
+    time.sleep(0.5)
+if not dev:
+    print("none"); sys.exit(2)
+try:
+    fd = os.open(dev, os.O_RDWR | os.O_NOCTTY | os.O_NONBLOCK)
+except PermissionError:
+    print(dev); sys.exit(3)
+a = termios.tcgetattr(fd); a[0] = 0; a[1] = 0; a[3] = 0
+a[2] |= termios.CLOCAL | termios.CREAD
+termios.tcsetattr(fd, termios.TCSANOW, a)
+out = b""
+while time.time() < end and b"J1-42" not in out:
+    try:
+        os.write(fd, b"\necho J1-$((6*7))\n")
+    except BlockingIOError:
+        pass
+    t = time.time() + 2
+    while time.time() < t:
+        r, _, _ = select.select([fd], [], [], 0.2)
+        if r:
+            out += os.read(fd, 4096)
+print(dev)
+sys.exit(0 if b"J1-42" in out else 1)
+PY
+    )
+    rc=$?
+    set -e
+    case $rc in
+    0) echo "$(date +%T) shell answers on $tty: picocom $tty" ;;
+    3) echo "$(date +%T) $tty is there but this user cannot open it (README: serial group)" ;;
+    *) echo "$(date +%T) the shell on ${tty:-the ACM port} does not answer."
+       echo "         Unplug the cable and plug it back in: the serial link sometimes"
+       echo "         comes up dead while Linux runs fine." ;;
+    esac
+}
+
 if lsusb -d 0525:a4aa >/dev/null 2>&1; then
     echo "Linux is already up on USB."
+    shell_check
     exit 0
 fi
 
@@ -78,10 +134,9 @@ echo "$(date +%T) staging"
 echo "$(date +%T) go"
 "$IREC" -c go || true
 for i in $(seq 1 30); do
-    if lsusb -d 0525:a4aa >/dev/null 2>&1; then
-        echo "$(date +%T) Linux is up (0525:a4aa). Shell: picocom /dev/ttyACM0"
-        exit 0
-    fi
+    lsusb -d 0525:a4aa >/dev/null 2>&1 && break
     sleep 1
 done
-fail "no 0525:a4aa after 30 s (README: if it does not boot)"
+lsusb -d 0525:a4aa >/dev/null 2>&1 || fail "no 0525:a4aa after 30 s (README: if it does not boot)"
+echo "$(date +%T) Linux is up (0525:a4aa)"
+shell_check

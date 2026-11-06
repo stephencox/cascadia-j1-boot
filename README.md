@@ -95,6 +95,11 @@ before a long session anyway: a flat battery fails the boot right after
   first. If the battery is fine, check that the Cascadia checkout has the
   AIC-timer fix (`apple_aic1_timer_start` in `patches/tree/0001`): without
   it the J1 can hang in early boot unless `earlycon=j1fb` is on.
+- **Linux is up but the shell does not answer** (`boot.sh` says so): unplug
+  the cable and plug it back in. The gadget's serial link sometimes comes up
+  dead (the host logs `device descriptor read/64, error -71` as it
+  enumerates) while Linux runs fine; the screen's log going quiet after the
+  touch firmware download is normal.
 - **The boot log on the panel stops:** a photo of the last lines is the
   most useful report.
 
