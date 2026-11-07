@@ -12,6 +12,11 @@ mount -t tmpfs tmpfs /tmp
 mount -t debugfs debugfs /sys/kernel/debug 2>/dev/null
 hostname -F /etc/hostname
 ip link set lo up
+# The CRNG: boot.sh's /chosen/rng-seed has it ready from the start. Without
+# one (another loader), a blocking read makes the kernel gather timer
+# jitter, about 1.5 s here, instead of waiting a minute or more for
+# interrupts and touch input. In the background: nothing here needs it.
+head -c 1 /dev/random > /dev/null &
 # The console cursor would blink over whatever the app draws.
 echo 0 > /sys/class/graphics/fbcon/cursor_blink 2>/dev/null
 echo "J1: rcS done" > /dev/kmsg

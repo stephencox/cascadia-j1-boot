@@ -9,7 +9,8 @@
 # 2. the iPad goes dark: tap the top button ONCE (do not hold it), and the
 #    patched iBSS comes up as DFU (05ac:1227);
 # 3. sends the raw-go iBEC, waits for Recovery (05ac:1281), sets loadaddr,
-#    uploads build/j1-staging.bin and sends `go`.
+#    uploads build/j1-staging.bin and sends `go`. The upload is a copy with
+#    a fresh /chosen/rng-seed (seed-staging.py), as iBoot gives iOS one.
 # Linux's gadget is 0525:a4aa, about 4 s later. Its shell is on
 # /dev/ttyACM0. If the iPad is already in DFU, this starts at step 3; if
 # this iBEC is already up (Recovery), at the upload.
@@ -18,7 +19,9 @@
 set -euo pipefail
 source "$(dirname "$0")/common.sh"
 source "$(dirname "$0")/ios-ssh.sh"
-trap ios_close EXIT
+SEEDED=
+cleanup() { ios_close; [ -z "$SEEDED" ] || rm -f "$SEEDED"; }
+trap cleanup EXIT
 
 IREC="${IRECOVERY:-irecovery}"
 KLOADER_URL=https://raw.githubusercontent.com/LukeZGD/Legacy-iOS-Kit/e46f0bd52246630d7a1e1bc8c795c6a86b9025a5/resources/kloader/kloader
@@ -128,9 +131,12 @@ if mode_is DFU; then
     wait_mode Recovery 30 || fail "iBEC did not come up as Recovery"
 fi
 echo "$(date +%T) staging"
+SEEDED=$(mktemp "${TMPDIR:-/tmp}/j1-staging.XXXXXX")
+python3 -I "$ROOT/scripts/seed-staging.py" "$STAGING" "$SEEDED"
 "$IREC" -c "setenv auto-boot false"
 "$IREC" -c "setenv loadaddr 0x80000000"
-"$IREC" -f "$STAGING"
+"$IREC" -f "$SEEDED"
+rm -f "$SEEDED"
 echo "$(date +%T) go"
 "$IREC" -c go || true
 for i in $(seq 1 30); do
